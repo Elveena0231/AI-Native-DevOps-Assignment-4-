@@ -1,0 +1,50 @@
+{{- if .Values.waf.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "user-service.fullname" . }}-waf
+  namespace: {{ include "user-service.namespace" . }}
+  labels:
+    app: {{ include "user-service.name" . }}-waf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "user-service.name" . }}-waf
+  template:
+    metadata:
+      labels:
+        app: {{ include "user-service.name" . }}-waf
+    spec:
+      containers:
+        - name: waf-proxy
+          image: "{{ .Values.waf.image.repository }}:{{ .Values.waf.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          # NOTE: This chart does not assume a specific WAF image entrypoint. You
+          # must supply an image that reads /etc/modsecurity/modsecurity.conf and
+          # /etc/modsecurity/rules.conf and proxies to the `user-service` service.
+          ports:
+            - containerPort: {{ .Values.waf.servicePort }}
+          volumeMounts:
+            - name: waf-config
+              mountPath: /etc/modsecurity
+              readOnly: true
+      volumes:
+        - name: waf-config
+          configMap:
+            name: {{ include "user-service.fullname" . }}-waf-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "user-service.fullname" . }}-waf
+  namespace: {{ include "user-service.namespace" . }}
+spec:
+  selector:
+    app: {{ include "user-service.name" . }}-waf
+  ports:
+    - port: {{ .Values.waf.servicePort }}
+      targetPort: {{ .Values.waf.servicePort }}
+
+{{- end }}

@@ -1,0 +1,16 @@
+{{- if .Values.kong.allowedCIDRs }}
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: ip-whitelist
+  namespace: {{ include "user-service.namespace" . }}
+plugin: ip-restriction
+config:
+  allow:
+{{- range $cidr := .Values.kong.allowedCIDRs }}
+    - {{ $cidr | quote }}
+{{- end }}
+  # By not specifying `deny`, the plugin will reject any IP not in the `allow` list.
+  # Optional: set a rejection code.
+  rejection_code: 403
+{{- end }}

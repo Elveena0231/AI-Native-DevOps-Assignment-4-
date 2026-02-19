@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong
+  namespace: kong
+spec:
+  template:
+    spec:
+      containers:
+        - name: proxy
+          image: REPLACE_WITH_IMAGE:REPLACE_WITH_TAG
+          env:
+            - name: KONG_PLUGINS
+              value: "bundled,custom"

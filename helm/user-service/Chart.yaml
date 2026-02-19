@@ -1,0 +1,18 @@
+apiVersion: v2
+name: user-service
+description: A Helm chart for deploying the User Service microservice
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+home: https://github.com/Elveena0231/AI-Native-DevOps-Assignment-4-
+sources:
+  - https://github.com/Elveena0231/AI-Native-DevOps-Assignment-4-/tree/main/user-service
+maintainers:
+  - name: DevOps Team
+    email: devops@example.com
+keywords:
+  - fastapi
+  - microservice
+  - authentication
+  - jwt
+  - kubernetes

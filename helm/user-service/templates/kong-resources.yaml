@@ -1,0 +1,145 @@
+{{- /* Kong resources parameterized for Helm */ -}}
+{{- $ns := include "user-service.namespace" . -}}
+---
+# Kubernetes Secret for JWT (optional)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.kong.jwtSecretName }}
+  namespace: {{ $ns }}
+type: Opaque
+data:
+  jwt_secret: "Y2hhbmdlLW1lLWluLXByb2R1Y3Rpb24="
+
+---
+# Kong Plugins
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-user-service
+  namespace: {{ $ns }}
+plugin: jwt
+config:
+  anonymous: ""
+  run_on: "all"
+
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: rate-limit-ip
+  namespace: {{ $ns }}
+plugin: rate-limiting
+config:
+  minute: 10
+  limit_by: ip
+  policy: local
+
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: custom-trace
+  namespace: {{ $ns }}
+plugin: custom
+config: {}
+
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: ip-whitelist
+  namespace: {{ $ns }}
+plugin: ip-restriction
+config:
+  allow:
+{{- range $cidr := .Values.kong.allowedCIDRs }}
+    - {{ $cidr | quote }}
+{{- end }}
+  rejection_code: 403
+
+---
+# Kong Consumer and Credential placeholder
+apiVersion: configuration.konghq.com/v1
+kind: KongConsumer
+metadata:
+  name: user-client
+  namespace: {{ $ns }}
+username: user-client
+
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongCredential
+metadata:
+  name: user-client-jwt
+  namespace: {{ $ns }}
+consumerRef: user-client
+type: jwt
+config:
+  key: user-client-key
+  secret: "REPLACE_WITH_SECRET_FROM_K8S_SECRET_or_use_kubectl_patch"
+
+---
+# Ingress resources
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: user-service-users-ingress
+  namespace: {{ $ns }}
+  annotations:
+    kubernetes.io/ingress.class: kong
+    konghq.com/plugins: {{ join "," .Values.kong.plugins }}
+spec:
+  rules:
+    - host: {{ .Values.kong.host }}
+      http:
+        paths:
+          - path: /users
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "user-service.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: user-service-health-ingress
+  namespace: {{ $ns }}
+  annotations:
+    kubernetes.io/ingress.class: kong
+spec:
+  rules:
+    - host: {{ .Values.kong.host }}
+      http:
+        paths:
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "user-service.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: user-service-verify-ingress
+  namespace: {{ $ns }}
+  annotations:
+    kubernetes.io/ingress.class: kong
+spec:
+  rules:
+    - host: {{ .Values.kong.host }}
+      http:
+        paths:
+          - path: /verify
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "user-service.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}

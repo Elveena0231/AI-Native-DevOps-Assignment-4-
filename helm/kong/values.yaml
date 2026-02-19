@@ -1,0 +1,13 @@
+replicaCount: 1
+
+image:
+  repository: kong
+  tag: "3.3"
+  pullPolicy: IfNotPresent
+
+service:
+  type: LoadBalancer
+  port: 8000
+
+plugins:
+  enabled: []

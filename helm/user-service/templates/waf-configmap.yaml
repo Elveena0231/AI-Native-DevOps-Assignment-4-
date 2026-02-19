@@ -1,0 +1,24 @@
+{{- if .Values.waf.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "user-service.fullname" . }}-waf-config
+  namespace: {{ include "user-service.namespace" . }}
+  labels:
+    {{- include "user-service.labels" . | nindent 4 }}
+data:
+  modsecurity.conf: |
+    SecRuleEngine {{ if eq .Values.waf.mode "On" }}On{{ else }}DetectionOnly{{ end }}
+    SecRequestBodyAccess On
+    SecResponseBodyAccess Off
+    SecRuleRemoveById 981176  # example removals; tune as needed
+    SecServerSignature "ModSec"
+    # Include rules file
+    Include /etc/modsecurity/rules.conf
+
+  rules.conf: |
+{{- range $i, $r := .Values.waf.rules }}
+    {{ $r }}
+{{- end }}
+
+{{- end }}

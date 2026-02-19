@@ -1,0 +1,248 @@
+# Default values for user-service Helm chart
+
+# Global settings
+# Production-oriented defaults for user-service Helm chart
+
+# Replica count - increase for basic HA
+replicaCount: 3
+
+# Image configuration - use immutable tags in production
+image:
+  repository: user-service
+  tag: "1.0.0"
+  pullPolicy: Always
+
+# Image pull secrets (for private registries)
+imagePullSecrets: []
+
+# Namespace configuration (support create + name)
+namespace:
+  create: true
+  name: user-service
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+  name: http
+
+# Resource limits and requests (tune to workload)
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1
+    memory: 1Gi
+
+# Autoscaling (disabled by default; enable in CI/CD if needed)
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: 80
+
+# Probes configuration
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+# Config and environment
+env:
+  LOG_LEVEL: info
+  DATABASE_TYPE: sqlite
+  DB_PATH: /app/data/users.db
+
+# Secret configuration - keep empty here and provide via CI/CD or external secret manager
+secretKey: ""
+secrets:
+  enabled: false
+  secretKey: ""
+
+# Database configuration
+database:
+  path: /app/data/users.db
+  type: sqlite
+
+# Persistence configuration - enable for production to avoid data loss
+persistence:
+  enabled: true
+  storageClass: standard
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  mountPath: /app/data
+
+# Node affinity and pod affinity configuration
+affinity: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1000
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Monitoring / other
+monitoring:
+  enabled: false
+  prometheus:
+    enabled: false
+    port: 9090
+
+# Deployment strategy
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+# DNS and restart
+dnsPolicy: ClusterFirst
+restartPolicy: Always
+terminationGracePeriodSeconds: 30
+
+# Kong integration settings
+kong:
+  jwtSecretName: user-service-jwt
+  # CIDR ranges allowed to access protected endpoints. If empty, no IP whitelist is applied.
+  # Example: ["10.0.0.0/8", "203.0.113.0/24"]
+  allowedCIDRs: []
+  host: user-service.example.com
+  plugins:
+    - jwt-user-service
+    - custom-trace
+    - rate-limit-ip
+    - ip-whitelist
+
+# Web Application Firewall (ModSecurity) settings (sidecar or edge proxy)
+waf:
+  enabled: false
+  # Image that provides ModSecurity + proxy (replace with an image that suits your environment)
+  image:
+    repository: owasp/modsecurity-crs
+    tag: latest
+  # Mode: "DetectionOnly" or "On" (blocking)
+  mode: DetectionOnly
+  # A small set of custom rules; for production, use OWASP CRS via ConfigMap mount
+  rules:
+    - "SecRule REQUEST_HEADERS:User-Agent \"sqlmap\" \\
+        \"id:1000001,phase:1,deny,log,msg:\'Blocked sqlmap UA\'\""
+  # Service port exposed by WAF proxy
+  servicePort: 80
+
+# Environment variables from Secrets
+envSecrets:
+  - name: SECRET_KEY
+    key: secret-key
+
+# ConfigMap data
+configMap:
+  enabled: true
+  data:
+    APP_ENV: production
+    LOG_LEVEL: INFO
+    DATABASE_TYPE: sqlite
+
+# Secret configuration
+secrets:
+  enabled: true
+  secretKey: change-me-in-production-use-strong-key
+
+# Persistence configuration
+persistence:
+  enabled: false
+  storageClass: local-path
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  mountPath: /app/data
+  # existingClaim: user-service-pvc
+
+# Volume configuration
+volumes: []
+  # - name: data
+  #   emptyDir: {}
+
+# Part of statements
+podLabels:
+  app: user-service
+  version: v1
+
+# Application configuration
+app:
+  port: 8000
+  debug: false
+  workers: 1
+
+# Monitoring configuration
+monitoring:
+  enabled: false
+  prometheus:
+    enabled: false
+    port: 9090
+
+# Database configuration
+database:
+  type: sqlite
+  path: /app/data/users.db
+
+# Deployment strategy
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+# DNS policy
+dnsPolicy: ClusterFirst
+
+# Restart policy
+restartPolicy: Always
+
+# Termination grace period
+terminationGracePeriodSeconds: 30
+
+# Init containers
+initContainers: []
+
+# Sidecars
+sidecarContainers: []

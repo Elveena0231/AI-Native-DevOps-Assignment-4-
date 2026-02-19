@@ -1,0 +1,23 @@
+_format_version: "1.1"
+
+services:
+  - name: user-service
+    url: http://waf:8080
+    routes:
+      - name: user-service-route
+        paths:
+          - /users
+
+plugins:
+  - name: rate-limiting
+    service: user-service
+    config:
+      minute: 10
+      limit_by: ip
+      policy: local
+
+  - name: ip-restriction
+    service: user-service
+    config:
+      allow:
+        - 172.19.0.1

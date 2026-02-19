@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "user-service.fullname" . }}-config
+  namespace: {{ include "user-service.namespace" . }}
+  labels:
+    {{- include "user-service.labels" . | nindent 4 }}
+data:
+  LOG_LEVEL: {{ default "INFO" .Values.configMap.data.LOG_LEVEL | quote }}
+  DATABASE_TYPE: {{ default "sqlite" .Values.configMap.data.DATABASE_TYPE | quote }}
+  DB_PATH: {{ default .Values.database.path .Values.configMap.data.DB_PATH | quote }}

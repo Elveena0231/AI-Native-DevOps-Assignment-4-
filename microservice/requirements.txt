@@ -1,0 +1,1 @@
+# Minimal dependencies (none required for built-in http.server)

@@ -1,0 +1,156 @@
+## Kong/Kubernetes manifest to route traffic to `user-service` and enable JWT for /users.
+
+# Notes:
+# - This file contains Kubernetes resources (K8s Secret) and Kong CRDs used by the Kong
+#   Ingress Controller (Kong for K8s). The JWT credential secret value is intentionally
+#   left as a placeholder in the KongCredential; store the real secret in the Kubernetes
+#   Secret below and then create or patch the KongCredential using the secret value.
+#
+# Example to patch the KongCredential with the secret value:
+#
+#   SECRET_VALUE=$(kubectl get secret user-service-jwt -n user-service -o jsonpath='{.data.jwt_secret}' | base64 --decode)
+#   kubectl patch kongcredential user-client-jwt -n user-service --type=json -p "[{\"op\":\"replace\",\"path\":\"/config/secret\",\"value\":\"$SECRET_VALUE\"}]"
+#
+# Be sure the Kong Ingress Controller CRDs are installed in the cluster before applying.
+---
+# Kubernetes Secret containing the JWT signing secret (externalize and rotate in production)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: user-service-jwt
+  namespace: user-service
+type: Opaque
+data:
+  # Base64-encoded secret value. Replace with your encoded secret or create via kubectl
+  jwt_secret: "Y2hhbmdlLW1lLWluLXByb2R1Y3Rpb24="
+
+---
+# KongPlugin to validate JWTs. This plugin will be attached to the /users Ingress via annotation.
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-user-service
+  namespace: user-service
+plugin: jwt
+config:
+  # Configure behaviour as needed (e.g. claims, algorithms)
+  anonymous: ""
+  run_on: "all"
+  # If your JWTs are signed with a shared secret (HMAC), validation requires the secret
+  # to be stored with the consumer credential (see KongCredential below).
+
+---
+# KongPlugin to inject X-Custom-Trace header using a custom Lua plugin
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: custom-trace
+  namespace: user-service
+plugin: custom
+config: {}
+
+---
+# Kong Consumer representing an authenticated client (example)
+apiVersion: configuration.konghq.com/v1
+kind: KongConsumer
+metadata:
+  name: user-client
+  namespace: user-service
+username: user-client
+
+---
+# KongCredential (JWT) for the consumer. The `config.secret` should be set to the
+# secret value stored in the Kubernetes Secret `user-service-jwt`. It is left as a
+# placeholder here; populate it from the Secret (example above) via a small script
+# or CI job to avoid committing secrets to version control.
+apiVersion: configuration.konghq.com/v1
+kind: KongCredential
+# KongPlugin for IP-based rate limiting: 10 requests per minute per IP
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: rate-limit-ip
+  namespace: user-service
+plugin: rate-limiting
+config:
+  minute: 10
+  limit_by: ip
+  policy: local
+
+---
+# KongPlugin to inject X-Custom-Trace header using a custom Lua plugin
+metadata:
+  name: user-client-jwt
+  namespace: user-service
+consumerRef: user-client
+type: jwt
+config:
+  key: user-client-key
+  secret: "REPLACE_WITH_SECRET_FROM_K8S_SECRET_or_use_kubectl_patch"
+
+---
+# Ingress for /users (protected by JWT plugin)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: user-service-users-ingress
+  namespace: user-service
+  annotations:
+    kubernetes.io/ingress.class: kong
+    konghq.com/plugins: ip-whitelist,jwt-user-service,custom-trace,rate-limit-ip
+spec:
+  rules:
+    - host: user-service.example.com
+      http:
+        paths:
+          - path: /users
+            pathType: Prefix
+            backend:
+              service:
+                name: user-service
+                port:
+                  number: 8000
+
+---
+# Ingress for /health (no auth)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: user-service-health-ingress
+  namespace: user-service
+  annotations:
+    kubernetes.io/ingress.class: kong
+spec:
+  rules:
+    - host: user-service.example.com
+      http:
+        paths:
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: user-service
+                port:
+                  number: 8000
+
+---
+# Ingress for /verify (no auth)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: user-service-verify-ingress
+  namespace: user-service
+  annotations:
+    kubernetes.io/ingress.class: kong
+spec:
+  rules:
+    - host: user-service.example.com
+      http:
+        paths:
+          - path: /verify
+            pathType: Prefix
+            backend:
+              service:
+                name: user-service
+                port:
+                  number: 8000
