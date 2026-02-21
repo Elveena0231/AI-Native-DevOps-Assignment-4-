@@ -120,6 +120,54 @@ helm upgrade --install user-service ./helm/user-service \
 
 ## Condensed Testing Steps (Mandatory)
 
+### Option C: demo-validated
+
+Use this exact order after cloning and deployment. It avoids flaky results caused by old rate-limit quota or plugin propagation delay.
+
+```bash
+# If port-forward says "address already in use", it means an existing forward is already active.
+# Only start these if they are not already running:
+kubectl port-forward -n kong svc/kong-kong-proxy 8000:80
+kubectl port-forward -n user-service svc/user-service 18000:8000
+
+# Reset whitelist to allow-all and clear rate-limit window
+kubectl patch kongplugin ip-whitelist -n user-service --type merge -p '{"config":{"allow":["0.0.0.0/0"]}}'
+sleep 65
+
+# Fresh JWT
+TOKEN=$(curl -s -X POST 'http://localhost:18000/login' -H 'Content-Type: application/json' -d '{"username":"testuser","password":"password123"}' | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))')
+
+# Auth bypass + protected API
+curl -s -o /dev/null -w "health=%{http_code}\n" -H 'Host: user-service.example.com' 'http://localhost:8000/health'
+curl -s -o /dev/null -w "users_no_auth=%{http_code}\n" -H 'Host: user-service.example.com' 'http://localhost:8000/users'
+curl -s -o /dev/null -w "users_with_auth=%{http_code}\n" -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" 'http://localhost:8000/users'
+
+# Custom plugin header
+curl -i -s -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" 'http://localhost:8000/users' | grep -i X-Custom-Trace
+
+# Rate limit test (must run after sleep, before extra /users calls)
+sleep 65
+for i in $(seq 1 12); do curl -s -o /dev/null -w "req_$i=%{http_code}\n" -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" 'http://localhost:8000/users'; done
+
+# Whitelist test with retry (Kong update may take a few seconds)
+sleep 65
+kubectl patch kongplugin ip-whitelist -n user-service --type merge -p '{"config":{"allow":["203.0.113.1/32"]}}'
+for i in $(seq 1 10); do b=$(curl -s -o /dev/null -w "%{http_code}" -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" 'http://localhost:8000/users'); echo "blocked_try_$i=$b"; [ "$b" = "403" ] && break; sleep 2; done
+
+kubectl patch kongplugin ip-whitelist -n user-service --type merge -p '{"config":{"allow":["0.0.0.0/0"]}}'
+for i in $(seq 1 10); do r=$(curl -s -o /dev/null -w "%{http_code}" -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" 'http://localhost:8000/users'); echo "restored_try_$i=$r"; [ "$r" = "200" ] && break; sleep 2; done
+
+# WAF SQLi block
+curl -s -o /dev/null -w "benign=%{http_code}\n" -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" 'http://localhost:8000/users?name=normaluser'
+curl -s -o /dev/null -w "sqli=%{http_code}\n" -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" "http://localhost:8000/users?name='%20OR%20'1'='1%20--%20"
+```
+
+Expected highlights:
+- `health=200`, `users_no_auth=401`, `users_with_auth=200`
+- `req_1..10=200`, `req_11..12=429`
+- `blocked_try_N=403` and `restored_try_N=200` (N may be 1..10)
+- `benign=200`, `sqli=403`
+
 ### Option A: One-command full validation
 
 Run:
