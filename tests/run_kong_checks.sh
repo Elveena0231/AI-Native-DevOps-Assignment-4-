@@ -100,15 +100,25 @@ info "Waiting for rate-limit reset before whitelist test"
 sleep 65
 
 info "Checking whitelist block/restore by patching allow list"
-kubectl patch kongplugin ip-whitelist -n "${NAMESPACE}" --type merge -p '{"config":{"allow":["172.19.0.1"]}}' >/dev/null
+kubectl patch kongplugin ip-whitelist -n "${NAMESPACE}" --type merge -p '{"config":{"allow":["203.0.113.1/32"]}}' >/dev/null
 sleep 2
-blocked=$(code -H "Host: ${HOST_HEADER}" -H "Authorization: Bearer ${TOKEN}" "${BASE_URL}")
+blocked=""
+for _ in $(seq 1 10); do
+  blocked=$(code -H "Host: ${HOST_HEADER}" -H "Authorization: Bearer ${TOKEN}" "${BASE_URL}")
+  [ "$blocked" = "403" ] && break
+  sleep 2
+done
 echo "whitelist_block=$blocked"
 [ "$blocked" = "403" ] || fail "Expected blocked whitelist request=403, got $blocked"
 
-kubectl patch kongplugin ip-whitelist -n "${NAMESPACE}" --type merge -p '{"config":{"allow":["127.0.0.1"]}}' >/dev/null
+kubectl patch kongplugin ip-whitelist -n "${NAMESPACE}" --type merge -p '{"config":{"allow":["0.0.0.0/0"]}}' >/dev/null
 sleep 2
-restored=$(code -H "Host: ${HOST_HEADER}" -H "Authorization: Bearer ${TOKEN}" "${BASE_URL}")
+restored=""
+for _ in $(seq 1 10); do
+  restored=$(code -H "Host: ${HOST_HEADER}" -H "Authorization: Bearer ${TOKEN}" "${BASE_URL}")
+  [ "$restored" = "200" ] && break
+  sleep 2
+done
 echo "whitelist_restored=$restored"
 [ "$restored" = "200" ] || fail "Expected restored whitelist request=200, got $restored"
 
