@@ -16,12 +16,12 @@ This project implements a Kubernetes-based secure API platform with Kong OSS as 
 ```mermaid
 flowchart LR
     C[Client] --> K[Kong Gateway]
-    K -->|/health,/verify| US[user-service]
-    K -->|/users + plugins| WAF[WAF Proxy (ModSecurity)]
+    K -->|health, verify| US[User Service]
+    K -->|users + plugins| WAF[WAF Proxy]
     WAF --> US
     US --> DB[(SQLite)]
 
-    subgraph Kong Plugins on /users
+    subgraph KP["Kong Plugins on users path"]
       JWT[JWT Auth]
       RL[Rate Limit 10/min/IP]
       IPW[IP Whitelist]
