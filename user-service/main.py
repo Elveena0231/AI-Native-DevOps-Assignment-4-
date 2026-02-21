@@ -127,6 +127,7 @@ def create_access_token(username: str, expires_delta: Optional[timedelta] = None
     expire = datetime.utcnow() + expires_delta
     payload = {
         "sub": username,
+        "iss": "user-client-key",
         "exp": expire,
         "iat": datetime.utcnow()
     }

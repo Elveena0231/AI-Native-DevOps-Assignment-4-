@@ -59,6 +59,7 @@ Selector labels
 {{- define "user-service.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "user-service.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+app: {{ include "user-service.name" . }}
 {{- end }}
 
 {{/*

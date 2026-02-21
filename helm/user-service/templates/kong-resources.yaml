@@ -8,22 +8,22 @@ metadata:
   name: {{ .Values.kong.jwtSecretName }}
   namespace: {{ $ns }}
 type: Opaque
-data:
-  jwt_secret: "Y2hhbmdlLW1lLWluLXByb2R1Y3Rpb24="
+stringData:
+  jwt_secret: {{ default .Values.secretKey .Values.secrets.secretKey | quote }}
 
 ---
 # Kong Plugins
+{{- if has "jwt-user-service" .Values.kong.plugins }}
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
 metadata:
   name: jwt-user-service
   namespace: {{ $ns }}
 plugin: jwt
-config:
-  anonymous: ""
-  run_on: "all"
+{{- end }}
 
 ---
+{{- if has "rate-limit-ip" .Values.kong.plugins }}
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
 metadata:
@@ -34,8 +34,10 @@ config:
   minute: 10
   limit_by: ip
   policy: local
+{{- end }}
 
 ---
+{{- if has "custom-trace" .Values.kong.plugins }}
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
 metadata:
@@ -43,41 +45,38 @@ metadata:
   namespace: {{ $ns }}
 plugin: custom
 config: {}
-
----
-apiVersion: configuration.konghq.com/v1
-kind: KongPlugin
-metadata:
-  name: ip-whitelist
-  namespace: {{ $ns }}
-plugin: ip-restriction
-config:
-  allow:
-{{- range $cidr := .Values.kong.allowedCIDRs }}
-    - {{ $cidr | quote }}
 {{- end }}
-  rejection_code: 403
 
 ---
+
 # Kong Consumer and Credential placeholder
 apiVersion: configuration.konghq.com/v1
 kind: KongConsumer
 metadata:
   name: user-client
   namespace: {{ $ns }}
+  annotations:
+    kubernetes.io/ingress.class: kong
 username: user-client
+credentials:
+  - user-client-jwt
 
 ---
-apiVersion: configuration.konghq.com/v1
-kind: KongCredential
+apiVersion: v1
+kind: Secret
 metadata:
   name: user-client-jwt
   namespace: {{ $ns }}
-consumerRef: user-client
-type: jwt
-config:
+  annotations:
+    kubernetes.io/ingress.class: kong
+  labels:
+    konghq.com/credential: jwt
+type: Opaque
+stringData:
+  kongCredType: jwt
   key: user-client-key
-  secret: "REPLACE_WITH_SECRET_FROM_K8S_SECRET_or_use_kubectl_patch"
+  secret: {{ default .Values.secretKey .Values.secrets.secretKey | quote }}
+  algorithm: HS256
 
 ---
 # Ingress resources
@@ -98,9 +97,9 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "user-service.fullname" . }}
+                name: {{ ternary (printf "%s-waf" (include "user-service.fullname" .)) (include "user-service.fullname" .) .Values.waf.enabled }}
                 port:
-                  number: {{ .Values.service.port }}
+                  number: {{ ternary .Values.waf.servicePort .Values.service.port .Values.waf.enabled }}
 
 ---
 apiVersion: networking.k8s.io/v1

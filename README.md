@@ -1571,3 +1571,94 @@ This assignment provides a complete DevOps stack with:
 - ✅ Secure configuration management
 
 All components are tested and operational in GitHub Codespaces!
+
+---
+
+## Runtime Verification (Kong + Kubernetes)
+
+Use these commands to verify the required controls on a local kind cluster.
+
+### 1) Port-forwards
+
+```bash
+kubectl port-forward -n kong svc/kong-kong-proxy 8000:80
+kubectl port-forward -n user-service svc/user-service 18000:8000
+```
+
+### 2) Fetch JWT token
+
+```bash
+TOKEN=$(curl -s -X POST 'http://localhost:18000/login' \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"testuser","password":"password123"}' \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))')
+```
+
+### 3) Authentication bypass + protection
+
+```bash
+curl -s -o /dev/null -w "health=%{http_code}\n" -H 'Host: user-service.example.com' 'http://localhost:8000/health'
+curl -s -o /dev/null -w "verify_no_token=%{http_code}\n" -H 'Host: user-service.example.com' 'http://localhost:8000/verify'
+curl -s -o /dev/null -w "users_no_auth=%{http_code}\n" -H 'Host: user-service.example.com' 'http://localhost:8000/users'
+curl -s -o /dev/null -w "users_with_auth=%{http_code}\n" -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" 'http://localhost:8000/users'
+```
+
+Expected:
+- `health=200`
+- `verify_no_token=422` (public endpoint; invalid/missing query token)
+- `users_no_auth=401` (Kong JWT plugin blocks)
+- `users_with_auth=200`
+
+### 4) Custom Lua plugin verification (`X-Custom-Trace`)
+
+```bash
+curl -i -s -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" 'http://localhost:8000/users' | grep -i 'X-Custom-Trace'
+```
+
+Expected: `X-Custom-Trace` header present.
+
+### 5) Rate limiting (10 req/min per IP)
+
+```bash
+sleep 65
+for i in $(seq 1 12); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" 'http://localhost:8000/users')
+  echo "Req $i -> $code"
+done
+```
+
+Expected:
+- `Req 1..10 -> 200`
+- `Req 11..12 -> 429`
+
+### 6) IP whitelist (allow/deny)
+
+```bash
+# deny local source
+kubectl patch kongplugin ip-whitelist -n user-service --type merge -p '{"config":{"allow":["172.19.0.1"]}}'
+curl -s -o /dev/null -w "blocked=%{http_code}\n" -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" 'http://localhost:8000/users'
+
+# allow local source again
+kubectl patch kongplugin ip-whitelist -n user-service --type merge -p '{"config":{"allow":["127.0.0.1"]}}'
+curl -s -o /dev/null -w "restored=%{http_code}\n" -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" 'http://localhost:8000/users'
+```
+
+Expected:
+- `blocked=403`
+- `restored=200`
+
+### 7) WAF SQLi blocking test
+
+```bash
+curl -s -o /dev/null -w "benign=%{http_code}\n" \
+  -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" \
+  'http://localhost:8000/users?name=normaluser'
+
+curl -s -o /dev/null -w "sqli=%{http_code}\n" \
+  -H 'Host: user-service.example.com' -H "Authorization: Bearer ${TOKEN}" \
+  "http://localhost:8000/users?name='%20OR%20'1'='1%20--%20"
+```
+
+Expected:
+- `benign=200`
+- `sqli=403`

@@ -146,7 +146,8 @@ kong:
   jwtSecretName: user-service-jwt
   # CIDR ranges allowed to access protected endpoints. If empty, no IP whitelist is applied.
   # Example: ["10.0.0.0/8", "203.0.113.0/24"]
-  allowedCIDRs: []
+  allowedCIDRs:
+    - "127.0.0.1/32"
   host: user-service.example.com
   plugins:
     - jwt-user-service

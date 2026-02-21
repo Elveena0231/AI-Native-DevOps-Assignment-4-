@@ -1,4 +1,4 @@
-FROM kong:3.3
+FROM kong:3.9
 
 # Add custom plugin under Kong's Lua plugin path
 COPY plugins/custom /usr/local/share/lua/5.1/kong/plugins/custom

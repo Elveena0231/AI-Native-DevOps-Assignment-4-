@@ -10,7 +10,4 @@ config:
 {{- range $cidr := .Values.kong.allowedCIDRs }}
     - {{ $cidr | quote }}
 {{- end }}
-  # By not specifying `deny`, the plugin will reject any IP not in the `allow` list.
-  # Optional: set a rejection code.
-  rejection_code: 403
 {{- end }}
