@@ -15,7 +15,9 @@ import os
 from pathlib import Path
 
 # ==================== Configuration ====================
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is required")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 DB_PATH = os.getenv("DB_PATH", "./data/users.db")
