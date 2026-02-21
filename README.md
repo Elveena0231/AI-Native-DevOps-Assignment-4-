@@ -11,6 +11,29 @@ This project implements a Kubernetes-based secure API platform with Kong OSS as 
 - Helm manages service + Kong configuration.
 - Terraform provides base Kubernetes infrastructure resources.
 
+## Architecture Flow Diagram
+
+```mermaid
+flowchart LR
+    C[Client] --> K[Kong Gateway]
+    K -->|/health,/verify| US[user-service]
+    K -->|/users + plugins| WAF[WAF Proxy (ModSecurity)]
+    WAF --> US
+    US --> DB[(SQLite)]
+
+    subgraph Kong Plugins on /users
+      JWT[JWT Auth]
+      RL[Rate Limit 10/min/IP]
+      IPW[IP Whitelist]
+      LUA[Custom Lua X-Custom-Trace]
+    end
+
+    K -. applies .-> JWT
+    K -. applies .-> RL
+    K -. applies .-> IPW
+    K -. applies .-> LUA
+```
+
 ## API Request Flow (Client → Kong → Microservice)
 
 1. Client sends request to host `user-service.example.com` via Kong proxy.
@@ -57,6 +80,34 @@ This project implements a Kubernetes-based secure API platform with Kong OSS as 
 - WAF deployment/service is provided in Helm templates.
 - Protected `/users` route can be sent through WAF service before user-service.
 - WAF behavior is configurable via Helm values (`waf.enabled`, rules, mode).
+
+## Deployment Steps (Relevant and Reproducible)
+
+1. Create/confirm Kubernetes context (kind or any cluster).
+2. Install Kong in `kong` namespace.
+3. Build/push required images:
+  - `user-service:1.0.0`
+  - custom Kong image with Lua plugin (if using custom image flow)
+  - `waf-proxy:latest` (if WAF enabled)
+4. Deploy user-service Helm chart in `user-service` namespace.
+5. Verify resources:
+  - `kubectl get pods -n kong`
+  - `kubectl get pods -n user-service`
+  - `kubectl get ingress -n user-service`
+6. Run automated security verification script.
+
+### Example Helm install/upgrade commands
+
+```bash
+helm upgrade --install kong kong/kong -n kong --create-namespace
+
+helm upgrade --install user-service ./helm/user-service \
+  -n user-service --create-namespace \
+  --set image.repository=user-service \
+  --set image.tag=1.0.0 \
+  --set secrets.enabled=true \
+  --set secrets.secretKey='<your-secret>'
+```
 
 ## Condensed Setup
 
@@ -154,3 +205,33 @@ Expected: `benign=200`, `sqli=403`.
 - Terraform: `infra/terraform/`, `terraform/`
 - Runtime checks: `tests/run_kong_checks.sh`
 - AI usage log: `ai-usage.md`
+
+## Project Structure Diagram
+
+```mermaid
+flowchart TD
+  ROOT[AI-Native-DevOps-Assignment-4-]
+  ROOT --> US[user-service/]
+  ROOT --> HELM[helm/]
+  ROOT --> KONG[kong/]
+  ROOT --> K8S[k8s/]
+  ROOT --> TF1[infra/terraform/]
+  ROOT --> TF2[terraform/]
+  ROOT --> TESTS[tests/]
+  ROOT --> AI[ai-usage.md]
+  ROOT --> README[README.md]
+
+  HELM --> HELMUS[helm/user-service]
+  HELM --> HELMK[helm/kong]
+  KONG --> PLUG[kong/plugins/custom]
+  TESTS --> CHECK[run_kong_checks.sh]
+```
+
+## Quick Validation Checklist
+
+- `./tests/run_kong_checks.sh` returns `All Kubernetes Kong checks passed`
+- `/health` public and `/users` JWT-protected
+- `X-Custom-Trace` header present on protected response
+- Rate limit enforces `429` after quota
+- IP whitelist blocks non-allowed source
+- SQLi-style request returns `403` with WAF path enabled
